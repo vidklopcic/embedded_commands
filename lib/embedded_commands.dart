@@ -124,8 +124,14 @@ class Command {
     assert(group <= 0xff);
     assert(id <= 0xff);
     assert(type == kTypeExtended || payload.length <= 0xff);
-    assert(type != kTypeExtended || payload.length >= kExtendedHeaderLen);
-    List<int> command = [type, group, id, ...payload];
+    assert(type != kTypeExtended || payload.length >= kTypeExtended);
+    List<int> command = [
+      type,
+      group,
+      id,
+      type == kTypeExtended ? 0 : payload.length,
+      ...payload,
+    ];
     int crc = crc16(command);
     return [...command, crc >> 8, crc & 0xff];
   }
