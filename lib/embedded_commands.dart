@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:embedded_commands/crc16.dart';
@@ -6,19 +7,24 @@ typedef EmbeddedCommandsTx<T> = Future<T> Function(List<int> data);
 typedef EmbeddedCommandsRx = void Function(Command command);
 
 class EmbeddedCommands<T> {
+  static const Duration kTimeout = Duration(seconds: 1);
   final EmbeddedCommandsTx<T> tx;
-  final EmbeddedCommandsRx rx;
+  DateTime _lastByte = DateTime.now();
   Command _command = Command();
   int _payloadIndex = 0;
   int _payloadLen = 0;
   int _crc = 0;
+  final StreamController<Command> _rx = StreamController.broadcast();
 
-  EmbeddedCommands({
-    required this.tx,
-    required this.rx,
-  });
+  Stream<Command> get rx => _rx.stream;
+
+  EmbeddedCommands({required this.tx});
 
   void feed(int byte) {
+    if (DateTime.now().difference(_lastByte) > kTimeout) {
+      _resetCommand();
+    }
+    _lastByte = DateTime.now();
     switch (_payloadIndex) {
       case 0:
         if (!Command.kTypes.contains(byte)) {
@@ -36,30 +42,31 @@ class EmbeddedCommands<T> {
         _payloadLen = byte;
         break;
       default:
-        if (_command.type == Command.kTypeExtended && _payloadIndex < Command.kExtendedHeaderLen) {
+        final index = _payloadIndex - 4;
+        if (_command.type == Command.kTypeExtended && index < Command.kExtendedHeaderLen) {
           _command.payload.add(byte);
-          _payloadLen |= byte << (8 * _payloadIndex);
-        } else if (_payloadIndex < _payloadLen) {
+          _payloadLen |= byte << (8 * index);
+        } else if (index < _payloadLen) {
           _command.payload.add(byte);
         } else {
           // crc (2 bytes)
-          if (_payloadIndex == _payloadLen) {
+          if (index == _payloadLen) {
             _crc = byte;
           } else {
             _crc |= byte << 8;
-            if (_command.crc == _crc) {
-              rx(_command);
+            if (_command.crc(_payloadLen) == _crc) {
+              _rx.add(_command);
             }
             _resetCommand();
             return;
           }
         }
-        _payloadIndex++;
         break;
     }
+    _payloadIndex++;
   }
 
-  Future<T> writeCommand(Command command) {
+  Future<T> send(Command command) {
     return tx(command.bytes);
   }
 
@@ -117,7 +124,7 @@ class Command {
           ...payload,
         ];
 
-  int get crc => crc16([type, group, id, ...payload]);
+  int crc(int payloadLen) => crc16([type, group, id, payloadLen, ...payload]);
 
   List<int> get bytes {
     assert(kTypes.contains(type));
@@ -133,6 +140,6 @@ class Command {
       ...payload,
     ];
     int crc = crc16(command);
-    return [...command, crc >> 8, crc & 0xff];
+    return [...command, crc & 0xff, crc >> 8];
   }
 }
