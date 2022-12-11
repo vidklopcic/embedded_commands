@@ -109,20 +109,30 @@ class Command {
     List<int>? payload,
   }) : payload = payload ?? [];
 
-  Command.write({required this.group, required this.id, required this.payload})
+  Command.write({required this.group, required this.id, List<int>? payload})
       : type = Command.kTypeWrite,
-        assert(payload.length <= 0xff);
+        payload = payload ?? [],
+        assert((payload?.length ?? 0) <= 0xff);
 
-  Command.read({required this.group, required this.id, required this.payload})
+  Command.read({required this.group, required this.id, List<int>? payload})
       : type = Command.kTypeRead,
-        assert(payload.length <= 0xff);
+        payload = payload ?? [],
+        assert((payload?.length ?? 0) <= 0xff);
 
-  Command.extended({required this.group, required this.id, required List<int> payload})
+  Command.extended({required this.group, required this.id, List<int>? payload})
       : type = Command.kTypeExtended,
         payload = [
-          ...(ByteData(8)..setUint64(0, payload.length + 8, Endian.little)).buffer.asUint8List().toList(),
-          ...payload,
+          ...(ByteData(8)..setUint64(0, (payload ?? []).length + 8, Endian.little)).buffer.asUint8List().toList(),
+          ...(payload ?? []),
         ];
+
+  void setExtendedPayload(List<int> payload) {
+    type = kTypeExtended;
+    payload = [
+      ...(ByteData(8)..setUint64(0, payload.length + 8, Endian.little)).buffer.asUint8List().toList(),
+      ...payload,
+    ];
+  }
 
   int crc(int payloadLen) => crc16([type, group, id, payloadLen, ...payload]);
 
