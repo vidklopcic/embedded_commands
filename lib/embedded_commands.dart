@@ -66,6 +66,10 @@ class EmbeddedCommands<T> {
     _payloadIndex++;
   }
 
+  Stream<Command> getHandler(Command command) {
+    return rx.where((i) => i.group == command.group && i.id == command.id);
+  }
+
   Future<T> send(Command command) {
     return tx(command.bytes);
   }
@@ -101,6 +105,7 @@ class Command {
   int group;
   int id;
   List<int> payload;
+  String get text => String.fromCharCodes(payload);
 
   Command({
     this.type = Command.kTypeWrite,
