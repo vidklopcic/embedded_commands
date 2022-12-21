@@ -47,6 +47,7 @@ class EmbeddedCommands<T> {
           _command.payload.add(byte);
           _payloadLen |= byte << (8 * index);
         } else if (index < _payloadLen) {
+          if (_payloadLen > 3000) return _resetCommand();
           _command.payload.add(byte);
         } else {
           // crc (2 bytes)
@@ -80,6 +81,10 @@ class EmbeddedCommands<T> {
     _crc = 0;
     _command = Command();
   }
+
+  void dispose() {
+    _rx.close();
+  }
 }
 
 class ExtendedCommandHeader {
@@ -106,6 +111,7 @@ class Command {
   int id;
   List<int> payload;
   String get text => String.fromCharCodes(payload);
+  ByteData get payloadBytes => ByteData.view(Uint8List.fromList(payload).buffer);
 
   Command({
     this.type = Command.kTypeWrite,
@@ -133,20 +139,21 @@ class Command {
 
   void setExtendedPayload(List<int> payload) {
     type = kTypeExtended;
-    payload = [
-      ...(ByteData(8)..setUint64(0, payload.length + 8, Endian.little)).buffer.asUint8List().toList(),
+    final bd = ByteData(8);
+    bd.setUint64(0, payload.length + 8, Endian.little);
+    this.payload = [
+      ...bd.buffer.asUint8List(),
       ...payload,
     ];
   }
 
-  int crc(int payloadLen) => crc16([type, group, id, payloadLen, ...payload]);
+  int crc(int payloadLen) => crc16([type, group, id, type == kTypeExtended ? 0 : payloadLen, ...payload]);
 
   List<int> get bytes {
     assert(kTypes.contains(type));
     assert(group <= 0xff);
     assert(id <= 0xff);
     assert(type == kTypeExtended || payload.length <= 0xff);
-    assert(type != kTypeExtended || payload.length >= kTypeExtended);
     List<int> command = [
       type,
       group,
